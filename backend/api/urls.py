@@ -16,6 +16,8 @@ router.register(r'ai/templates', viewsets.AIPromptTemplateViewSet, basename='ai-
 router.register(r'notification-channels', viewsets.NotificationChannelViewSet, basename='notification-channel')
 router.register(r'notification-rules', viewsets.NotificationRuleViewSet, basename='notification-rule')
 router.register(r'notification-logs', viewsets.NotificationLogViewSet, basename='notification-log')
+router.register(r'scheduled-ai-rules', viewsets.ScheduledAIRuleViewSet, basename='scheduled-ai-rule')
+router.register(r'scheduled-ai-rule-logs', viewsets.ScheduledAIRuleLogViewSet, basename='scheduled-ai-rule-log')
 
 urlpatterns = [
     # 系统管理

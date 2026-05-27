@@ -3,10 +3,13 @@ import { Card, Form, Input, Button, message, Space, Divider, Tag, Image, Spin, M
 import {
   SaveOutlined, ReloadOutlined, CloudServerOutlined,
   QrcodeOutlined, CheckCircleOutlined, CloseCircleOutlined, LogoutOutlined, ImportOutlined,
-  PlusOutlined, EditOutlined, DeleteOutlined, BellOutlined, SendOutlined,
+  PlusOutlined, EditOutlined, DeleteOutlined, BellOutlined, SendOutlined, ClockCircleOutlined,
 } from '@ant-design/icons';
 import { isNativeApp } from '../App';
-import { sourceAPI, aiAPI, fundsAPI, notificationChannelsAPI, notificationRulesAPI } from '../api';
+import {
+  sourceAPI, aiAPI, fundsAPI, accountsAPI,
+  notificationChannelsAPI, notificationRulesAPI, scheduledAIRulesAPI,
+} from '../api';
 import { usePreference } from '../contexts/PreferenceContext';
 
 const { TextArea } = Input;
@@ -651,7 +654,7 @@ const NotificationRulesCard = () => {
     {
       title: '通知渠道',
       key: 'channels',
-      render: (_, r) => r.channels.map(c => (
+      render: (_, r) => (r.channels || []).map(c => (
         <Tag key={c.id}>{c.channel_type === 'webhook' ? 'Webhook' : 'Email'}</Tag>
       )),
     },
@@ -776,6 +779,303 @@ const NotificationRulesCard = () => {
           </Form.Item>
           <Form.Item name="cooldown_minutes" label="冷却时间（分钟）" extra="同一规则触发后，冷却时间内不重复通知">
             <InputNumber min={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="is_active" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </Card>
+  );
+};
+
+const ScheduledAIRulesCard = () => {
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
+  const [rules, setRules] = useState([]);
+  const [channels, setChannels] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [funds, setFunds] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingRule, setEditingRule] = useState(null);
+  const [form] = Form.useForm();
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [rulesRes, channelsRes, templatesRes, accountsRes] = await Promise.all([
+        scheduledAIRulesAPI.list(),
+        notificationChannelsAPI.list(),
+        aiAPI.listTemplates(),
+        accountsAPI.list(),
+      ]);
+      setRules(rulesRes.data);
+      setChannels(channelsRes.data.filter(channel => channel.is_active));
+      setTemplates(templatesRes.data);
+      setAccounts(accountsRes.data.filter(account => account.parent !== null));
+    } catch {
+      message.error('加载定时 AI 规则失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleFundSearch = async (keyword) => {
+    if (!keyword) return;
+    try {
+      const res = await fundsAPI.search(keyword);
+      setFunds(Array.isArray(res.data) ? res.data : (res.data.results || []));
+    } catch {
+      setFunds([]);
+    }
+  };
+
+  const handleOpenModal = (rule = null) => {
+    setEditingRule(rule);
+    if (rule) {
+      form.setFieldsValue({
+        name: rule.name,
+        target_type: rule.target_type,
+        fund: rule.fund || undefined,
+        account: rule.account || undefined,
+        template: rule.template,
+        schedule_time: rule.schedule_time,
+        trading_day_only: rule.trading_day_only,
+        channel_ids: rule.channels.map(channel => channel.id),
+        is_active: rule.is_active,
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({
+        target_type: 'fund',
+        trading_day_only: true,
+        is_active: true,
+      });
+    }
+    setModalVisible(true);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      const payload = {
+        ...values,
+        schedule_time: typeof values.schedule_time === 'string'
+          ? values.schedule_time
+          : values.schedule_time?.format?.('HH:mm:ss'),
+      };
+
+      if (editingRule) {
+        await scheduledAIRulesAPI.update(editingRule.id, payload);
+        message.success('更新成功');
+      } else {
+        await scheduledAIRulesAPI.create(payload);
+        message.success('创建成功');
+      }
+
+      setModalVisible(false);
+      load();
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error('保存失败');
+      }
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await scheduledAIRulesAPI.delete(id);
+      message.success('删除成功');
+      load();
+    } catch {
+      message.error('删除失败');
+    }
+  };
+
+  const targetType = Form.useWatch('target_type', form) || 'fund';
+  const filteredTemplates = templates.filter(template => template.context_type === targetType);
+  const channelOptions = channels.map(channel => ({
+    value: channel.id,
+    label: channel.channel_type === 'webhook'
+      ? `Webhook: ${channel.config?.webhook_url?.slice(0, 30) || ''}`
+      : `Email: ${channel.config?.to_email || ''}`,
+  }));
+
+  const columns = [
+    { title: '规则名称', dataIndex: 'name', key: 'name' },
+    {
+      title: '分析类型',
+      dataIndex: 'target_type',
+      key: 'target_type',
+      render: (value) => value === 'fund'
+        ? <Tag color="blue">基金分析</Tag>
+        : <Tag color="green">持仓分析</Tag>,
+    },
+    {
+      title: '分析对象',
+      key: 'target',
+      render: (_, rule) => rule.target_type === 'fund'
+        ? `${rule.fund_name}（${rule.fund_code}）`
+        : rule.account_name,
+    },
+    { title: '提示词模板', dataIndex: 'template_name', key: 'template_name' },
+    { title: '触发时间', dataIndex: 'schedule_time', key: 'schedule_time', render: (value) => value?.slice?.(0, 5) || value },
+    {
+      title: '交易日',
+      dataIndex: 'trading_day_only',
+      key: 'trading_day_only',
+      render: (value) => value ? <Tag color="gold">仅交易日</Tag> : <Tag>每天</Tag>,
+    },
+    {
+      title: '通知渠道',
+      key: 'channels',
+      render: (_, rule) => rule.channels.map(channel => (
+        <Tag key={channel.id}>{channel.channel_type === 'webhook' ? 'Webhook' : 'Email'}</Tag>
+      )),
+    },
+    {
+      title: '状态',
+      dataIndex: 'is_active',
+      key: 'is_active',
+      render: (value) => value ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, rule) => (
+        <Space size="small">
+          <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenModal(rule)}>编辑</Button>
+          <Popconfirm title="确定删除？" onConfirm={() => handleDelete(rule.id)} okText="确定" cancelText="取消">
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Card
+      title={<Space><ClockCircleOutlined />定时 AI 规则</Space>}
+      extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>添加规则</Button>}
+    >
+      {channels.length === 0 && (
+        <Alert message="请先添加通知渠道，再配置定时 AI 规则" type="warning" showIcon style={{ marginBottom: 12 }} />
+      )}
+      {isMobile ? (
+        <List
+          dataSource={rules}
+          loading={loading}
+          locale={{ emptyText: '暂无定时 AI 规则' }}
+          renderItem={(rule) => (
+            <Card
+              key={rule.id}
+              size="small"
+              style={{ marginBottom: 8 }}
+              data-testid="scheduled-ai-rule-card"
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>{rule.name}</div>
+                  <div style={{ marginBottom: 4 }}>
+                    <Tag color={rule.target_type === 'fund' ? 'blue' : 'green'}>
+                      {rule.target_type === 'fund' ? '基金分析' : '持仓分析'}
+                    </Tag>
+                    {rule.is_active ? <Tag color="green">启用</Tag> : <Tag>禁用</Tag>}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#666' }}>
+                    {rule.target_type === 'fund'
+                      ? `${rule.fund_name}（${rule.fund_code}）`
+                      : rule.account_name}
+                  </div>
+                </div>
+                <Space size="small" direction="vertical">
+                  <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenModal(rule)}>编辑</Button>
+                  <Popconfirm title="确定删除？" onConfirm={() => handleDelete(rule.id)}>
+                    <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                  </Popconfirm>
+                </Space>
+              </div>
+            </Card>
+          )}
+        />
+      ) : (
+        <Table
+          dataSource={rules}
+          rowKey="id"
+          columns={columns}
+          loading={loading}
+          pagination={false}
+          size="small"
+          locale={{ emptyText: '暂无定时 AI 规则' }}
+        />
+      )}
+
+      <Modal
+        title={editingRule ? '编辑定时规则' : '添加定时规则'}
+        open={modalVisible}
+        onOk={handleSubmit}
+        onCancel={() => setModalVisible(false)}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+        width={isMobile ? '95vw' : 640}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item name="name" label="规则名称" rules={[{ required: true, message: '请输入规则名称' }]}>
+            <Input placeholder="例如：每日下午基金趋势分析" />
+          </Form.Item>
+          <Form.Item name="target_type" label="分析类型" rules={[{ required: true, message: '请选择分析类型' }]}>
+            <Select options={[
+              { value: 'fund', label: '基金分析' },
+              { value: 'position', label: '持仓分析' },
+            ]} />
+          </Form.Item>
+          {targetType === 'fund' ? (
+            <Form.Item name="fund" label="分析对象" rules={[{ required: true, message: '请选择基金' }]}>
+              <Select
+                showSearch
+                placeholder="输入基金代码或名称搜索"
+                filterOption={false}
+                onSearch={handleFundSearch}
+                options={funds.map(fund => ({
+                  value: fund.id,
+                  label: `${fund.fund_name}（${fund.fund_code}）`,
+                }))}
+              />
+            </Form.Item>
+          ) : (
+            <Form.Item name="account" label="分析对象" rules={[{ required: true, message: '请选择子账户' }]}>
+              <Select
+                placeholder="选择子账户"
+                options={accounts.map(account => ({
+                  value: account.id,
+                  label: account.name,
+                }))}
+              />
+            </Form.Item>
+          )}
+          <Form.Item name="template" label="提示词模板" rules={[{ required: true, message: '请选择提示词模板' }]}>
+            <Select
+              placeholder="选择提示词模板"
+              options={filteredTemplates.map(template => ({
+                value: template.id,
+                label: template.name,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="schedule_time" label="触发时间" rules={[{ required: true, message: '请选择触发时间' }]}>
+            <Input placeholder="14:30:00" />
+          </Form.Item>
+          <Form.Item name="channel_ids" label="通知渠道" rules={[{ required: true, message: '请选择至少一个渠道' }]}>
+            <Select mode="multiple" options={channelOptions} placeholder="选择通知渠道" />
+          </Form.Item>
+          <Form.Item name="trading_day_only" label="仅交易日触发" valuePropName="checked">
+            <Switch />
           </Form.Item>
           <Form.Item name="is_active" label="启用" valuePropName="checked">
             <Switch />
@@ -1248,6 +1548,7 @@ const SettingsPage = () => {
       <AITemplatesCard />
       <NotificationChannelsCard />
       <NotificationRulesCard />
+      <ScheduledAIRulesCard />
 
       {isNative && (
         <Card title="系统设置">

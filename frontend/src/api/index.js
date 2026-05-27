@@ -149,6 +149,14 @@ export const notificationRulesAPI = {
   delete: (id) => api.delete(`/notification-rules/${id}/`),
 };
 
+// 定时 AI 规则
+export const scheduledAIRulesAPI = {
+  list: () => api.get('/scheduled-ai-rules/'),
+  create: (data) => api.post('/scheduled-ai-rules/', data),
+  update: (id, data) => api.patch(`/scheduled-ai-rules/${id}/`, data),
+  delete: (id) => api.delete(`/scheduled-ai-rules/${id}/`),
+};
+
 // 通知记录
 export const notificationLogsAPI = {
   list: (params) => api.get('/notification-logs/', { params }),

@@ -644,6 +644,130 @@ class NotificationLog(models.Model):
         return f'{self.fund_name} {self.growth}% - {self.get_status_display()}'
 
 
+class ScheduledAIRule(models.Model):
+    """定时 AI 规则"""
+
+    TARGET_TYPE_CHOICES = [
+        ('fund', '基金分析'),
+        ('position', '持仓分析'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='scheduled_ai_rules')
+    name = models.CharField(max_length=100)
+    target_type = models.CharField(max_length=20, choices=TARGET_TYPE_CHOICES)
+    fund = models.ForeignKey(
+        Fund,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='scheduled_ai_rules',
+    )
+    account = models.ForeignKey(
+        Account,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='scheduled_ai_rules',
+    )
+    template = models.ForeignKey(
+        AIPromptTemplate,
+        on_delete=models.PROTECT,
+        related_name='scheduled_ai_rules',
+    )
+    channels = models.ManyToManyField(NotificationChannel, related_name='scheduled_ai_rules')
+    schedule_time = models.TimeField(help_text='每日触发时间')
+    trading_day_only = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'scheduled_ai_rule'
+        verbose_name = '定时 AI 规则'
+        verbose_name_plural = '定时 AI 规则'
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['schedule_time']),
+            models.Index(fields=['target_type']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(target_type='fund', fund__isnull=False, account__isnull=True)
+                | models.Q(target_type='position', fund__isnull=True, account__isnull=False),
+                name='scheduled_ai_rule_target_match',
+                violation_error_message='定时 AI 规则的分析对象与类型必须匹配',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.name}'
+
+    def clean(self):
+        """模型验证"""
+        from django.core.exceptions import ValidationError
+
+        if self.target_type == 'fund':
+            if self.fund is None:
+                raise ValidationError('基金分析规则必须绑定基金')
+            if self.account is not None:
+                raise ValidationError('基金分析规则不能绑定账户')
+        elif self.target_type == 'position':
+            if self.account is None:
+                raise ValidationError('持仓分析规则必须绑定子账户')
+            if self.account.parent is None:
+                raise ValidationError('持仓分析规则只能绑定子账户')
+            if self.fund is not None:
+                raise ValidationError('持仓分析规则不能绑定基金')
+        else:
+            raise ValidationError('无效的分析类型')
+
+        if self.template_id and self.template.user_id != self.user_id:
+            raise ValidationError('提示词模板必须属于当前用户')
+
+        if self.template_id and self.template.context_type != self.target_type:
+            raise ValidationError('提示词模板类型必须与分析类型一致')
+
+        if self.account is not None and self.account.user_id != self.user_id:
+            raise ValidationError('账户必须属于当前用户')
+
+    def save(self, *args, **kwargs):
+        """保存前验证"""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class ScheduledAIRuleLog(models.Model):
+    """定时 AI 规则执行日志"""
+
+    STATUS_CHOICES = [
+        ('success', '成功'),
+        ('failed', '失败'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    rule = models.ForeignKey(ScheduledAIRule, on_delete=models.CASCADE, related_name='logs')
+    channel = models.ForeignKey(NotificationChannel, on_delete=models.CASCADE, related_name='scheduled_ai_logs')
+    trigger_time = models.DateTimeField(auto_now_add=True, db_index=True)
+    run_date = models.DateField(db_index=True)
+    analysis_target_name = models.CharField(max_length=200)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    error_message = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'scheduled_ai_rule_log'
+        verbose_name = '定时 AI 规则执行日志'
+        verbose_name_plural = '定时 AI 规则执行日志'
+        indexes = [
+            models.Index(fields=['rule', 'run_date']),
+            models.Index(fields=['rule', 'trigger_time']),
+        ]
+
+    def __str__(self):
+        return f'{self.analysis_target_name} - {self.get_status_display()}'
+
+
 # Signal handlers
 from django.db.models.signals import post_delete
 from django.dispatch import receiver

@@ -208,5 +208,9 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'api.tasks.check_notification_rules',
         'schedule': crontab(minute='*/5'),  # 每 5 分钟
     },
+    'check-scheduled-ai-rules': {
+        'task': 'api.tasks.check_scheduled_ai_rules',
+        'schedule': crontab(minute='*'),  # 每分钟检查一次
+    },
 }
 

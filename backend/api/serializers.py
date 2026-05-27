@@ -11,6 +11,7 @@ from .models import (
     Watchlist, WatchlistItem, EstimateAccuracy, FundNavHistory,
     UserSourceCredential, AIConfig, AIPromptTemplate,
     NotificationChannel, NotificationRule, NotificationLog,
+    ScheduledAIRule, ScheduledAIRuleLog,
 )
 
 User = get_user_model()
@@ -412,5 +413,103 @@ class NotificationLogSerializer(serializers.ModelSerializer):
             'id', 'fund_code', 'fund_name', 'growth',
             'status', 'error_message', 'trigger_time',
             'channel_type', 'rule_type',
+        ]
+        read_only_fields = fields
+
+
+class ScheduledAIRuleSerializer(serializers.ModelSerializer):
+    """定时 AI 规则序列化器"""
+
+    fund_name = serializers.CharField(source='fund.fund_name', read_only=True)
+    fund_code = serializers.CharField(source='fund.fund_code', read_only=True)
+    account_name = serializers.CharField(source='account.name', read_only=True)
+    template_name = serializers.CharField(source='template.name', read_only=True)
+    channels = NotificationChannelSerializer(many=True, read_only=True)
+    channel_ids = serializers.ListField(
+        child=serializers.UUIDField(), write_only=True, required=False
+    )
+
+    class Meta:
+        model = ScheduledAIRule
+        fields = [
+            'id', 'name', 'target_type', 'fund', 'fund_code', 'fund_name',
+            'account', 'account_name', 'template', 'template_name',
+            'channels', 'channel_ids',
+            'schedule_time', 'trading_day_only', 'is_active', 'last_triggered_at',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'last_triggered_at', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        user = self.context['request'].user
+        target_type = data.get('target_type', getattr(self.instance, 'target_type', None))
+        fund = data.get('fund', getattr(self.instance, 'fund', None))
+        account = data.get('account', getattr(self.instance, 'account', None))
+        template = data.get('template', getattr(self.instance, 'template', None))
+        channel_ids = data.get('channel_ids', [])
+
+        if target_type == 'fund':
+            if not fund:
+                raise serializers.ValidationError({'fund': '基金分析规则必须选择基金'})
+            if account:
+                raise serializers.ValidationError({'account': '基金分析规则不能绑定账户'})
+        elif target_type == 'position':
+            if not account:
+                raise serializers.ValidationError({'account': '持仓分析规则必须选择子账户'})
+            if account.parent is None:
+                raise serializers.ValidationError({'account': '持仓分析规则只能绑定子账户'})
+            if fund:
+                raise serializers.ValidationError({'fund': '持仓分析规则不能绑定基金'})
+        else:
+            raise serializers.ValidationError({'target_type': '无效的分析类型'})
+
+        if template and template.user_id != user.id:
+            raise serializers.ValidationError({'template': '提示词模板必须属于当前用户'})
+        if template and template.context_type != target_type:
+            raise serializers.ValidationError({'template': '提示词模板类型必须与分析类型一致'})
+
+        if account and account.user_id != user.id:
+            raise serializers.ValidationError({'account': '账户必须属于当前用户'})
+        if fund and not Fund.objects.filter(id=fund.id).exists():
+            raise serializers.ValidationError({'fund': '基金不存在'})
+
+        if not channel_ids and not self.instance:
+            raise serializers.ValidationError({'channel_ids': '请至少选择一个通知渠道'})
+
+        if channel_ids:
+            owned_channels = NotificationChannel.objects.filter(id__in=channel_ids, user=user)
+            if owned_channels.count() != len(set(channel_ids)):
+                raise serializers.ValidationError({'channel_ids': '包含无效的通知渠道'})
+
+        return data
+
+    def create(self, validated_data):
+        channel_ids = validated_data.pop('channel_ids', [])
+        rule = super().create(validated_data)
+        if channel_ids:
+            channels = NotificationChannel.objects.filter(id__in=channel_ids, user=rule.user)
+            rule.channels.set(channels)
+        return rule
+
+    def update(self, instance, validated_data):
+        channel_ids = validated_data.pop('channel_ids', None)
+        rule = super().update(instance, validated_data)
+        if channel_ids is not None:
+            channels = NotificationChannel.objects.filter(id__in=channel_ids, user=rule.user)
+            rule.channels.set(channels)
+        return rule
+
+
+class ScheduledAIRuleLogSerializer(serializers.ModelSerializer):
+    """定时 AI 规则日志序列化器"""
+
+    channel_type = serializers.CharField(source='channel.channel_type', read_only=True)
+
+    class Meta:
+        model = ScheduledAIRuleLog
+        fields = [
+            'id', 'rule', 'channel', 'channel_type',
+            'trigger_time', 'run_date', 'analysis_target_name',
+            'status', 'error_message',
         ]
         read_only_fields = fields

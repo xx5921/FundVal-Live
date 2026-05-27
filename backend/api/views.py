@@ -12,6 +12,7 @@ import requests
 
 from fundval.config import config
 from fundval.bootstrap import verify_bootstrap_key, get_bootstrap_key
+from .services import run_ai_analysis
 
 
 def health(request):
@@ -173,13 +174,6 @@ def change_password(request):
     return Response({'message': '密码修改成功'})
 
 
-def _replace_placeholders(template: str, context_data: dict) -> str:
-    """将模板中的 {{key}} 占位符替换为 context_data 中的值"""
-    for key, value in context_data.items():
-        template = template.replace(f'{{{{{key}}}}}', str(value) if value is not None else '')
-    return template
-
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def ai_analyze(request):
@@ -191,7 +185,7 @@ def ai_analyze(request):
         "context_data": { ... }
     }
     """
-    from .models import AIConfig, AIPromptTemplate
+    from .models import AIPromptTemplate
 
     template_id = request.data.get('template_id')
     context_data = request.data.get('context_data', {})
@@ -205,36 +199,14 @@ def ai_analyze(request):
     except AIPromptTemplate.DoesNotExist:
         return Response({'error': '模板不存在'}, status=status.HTTP_404_NOT_FOUND)
 
-    # 取AI配置
-    ai_config = AIConfig.objects.filter(user=request.user).first()
-    if not ai_config:
-        return Response({'error': '未配置AI接口，请先在设置中配置'}, status=status.HTTP_400_BAD_REQUEST)
-
-    # 替换占位符
-    system_prompt = _replace_placeholders(template.system_prompt, context_data)
-    user_prompt = _replace_placeholders(template.user_prompt, context_data)
-
-    # 调用 OpenAI 协议接口
     try:
-        endpoint = ai_config.api_endpoint.rstrip('/')
-        resp = requests.post(
-            f'{endpoint}/chat/completions',
-            headers={
-                'Authorization': f'Bearer {ai_config.api_key}',
-                'Content-Type': 'application/json',
-            },
-            json={
-                'model': ai_config.model_name,
-                'messages': [
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt},
-                ],
-            },
-            timeout=60,
+        content = run_ai_analysis(
+            user=request.user,
+            template=template,
+            context_data=context_data,
         )
-        resp.raise_for_status()
-        result = resp.json()
-        content = result['choices'][0]['message']['content']
         return Response({'result': content})
+    except ValueError as error:
+        return Response({'error': str(error)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return Response({'error': f'AI接口调用失败: {str(e)}'}, status=status.HTTP_502_BAD_GATEWAY)

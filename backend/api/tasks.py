@@ -3,9 +3,17 @@ Celery 任务
 
 定义所有后台异步任务
 """
+from datetime import timedelta
+
 from celery import shared_task
 from django.core.management import call_command
+from django.utils import timezone
 import logging
+
+from api.notifications import ChannelRegistry
+from api.services import build_fund_context, build_position_context, run_ai_analysis
+from api.sources import SourceRegistry
+from api.utils.trading_calendar import is_trading_day
 
 logger = logging.getLogger(__name__)
 
@@ -191,3 +199,157 @@ def audit_accuracy():
     except Exception as e:
         logger.error(f'准确率审计失败: {str(e)}')
         raise
+
+
+def _refresh_fund_data(fund, source_name='eastmoney'):
+    """刷新基金估值和净值。"""
+    source = SourceRegistry.get_source(source_name)
+    if not source:
+        raise ValueError(f'数据源 {source_name} 不存在')
+
+    estimate_data = source.fetch_estimate(fund.fund_code)
+    nav_data = source.fetch_realtime_nav(fund.fund_code)
+
+    if not estimate_data or not nav_data:
+        raise ValueError(f'刷新基金 {fund.fund_code} 数据失败')
+
+    fund.estimate_nav = estimate_data.get('estimate_nav')
+    fund.estimate_growth = estimate_data.get('estimate_growth')
+    fund.estimate_time = estimate_data.get('estimate_time') or timezone.now()
+    fund.latest_nav = nav_data.get('nav')
+    fund.latest_nav_date = nav_data.get('nav_date')
+    fund.save(update_fields=[
+        'estimate_nav', 'estimate_growth', 'estimate_time',
+        'latest_nav', 'latest_nav_date', 'updated_at',
+    ])
+
+    return fund
+
+
+def _refresh_position_account_data(account, source_name='eastmoney'):
+    """刷新子账户下所有持仓基金的数据。"""
+    positions = account.positions.select_related('fund').all()
+    if not positions.exists():
+        raise ValueError('持仓账户无持仓，无法执行定时 AI 分析')
+
+    for position in positions:
+        _refresh_fund_data(position.fund, source_name=source_name)
+
+
+def _build_rule_context(rule):
+    """按规则构造 AI 分析上下文。"""
+    if rule.target_type == 'fund':
+        return build_fund_context(rule.user, rule.fund)
+    return build_position_context(rule.user, rule.account)
+
+
+def _build_rule_message(rule, content):
+    """构造通知标题和正文。"""
+    if rule.target_type == 'fund':
+        target_name = f'{rule.fund.fund_name}（{rule.fund.fund_code}）'
+        title = f'定时 AI 分析：{rule.template.name} - {rule.fund.fund_name}'
+    else:
+        target_name = rule.account.name
+        title = f'定时 AI 分析：{rule.template.name} - {rule.account.name}'
+
+    body = (
+        f'规则名称：{rule.name}\n'
+        f'触发时间：{timezone.localtime().strftime("%Y-%m-%d %H:%M")}\n'
+        f'分析对象：{target_name}\n\n'
+        f'{content}'
+    )
+    return title, body, target_name
+
+
+@shared_task
+def check_scheduled_ai_rules():
+    """
+    检查定时 AI 规则并发送通知
+
+    每分钟执行一次，筛选到达触发时间且满足交易日条件的规则。
+    """
+    from api.models import ScheduledAIRule, ScheduledAIRuleLog
+
+    now = timezone.localtime()
+    today = now.date()
+
+    rules = ScheduledAIRule.objects.filter(
+        is_active=True,
+        schedule_time__hour=now.hour,
+        schedule_time__minute=now.minute,
+    ).select_related('fund', 'account', 'template', 'user').prefetch_related('channels')
+
+    if not rules.exists():
+        return '触发 0 条，发送 0 条'
+
+    triggered = 0
+    sent = 0
+
+    for rule in rules:
+        if rule.trading_day_only and not is_trading_day(today):
+            logger.info(f'{today} 不是交易日，跳过定时 AI 规则 {rule.id}')
+            continue
+
+        if ScheduledAIRuleLog.objects.filter(rule=rule, run_date=today, status='success').exists():
+            logger.info(f'规则 {rule.id} 今日已成功执行，跳过')
+            continue
+
+        triggered += 1
+        error_message = None
+
+        try:
+            if rule.target_type == 'fund':
+                _refresh_fund_data(rule.fund)
+            else:
+                _refresh_position_account_data(rule.account)
+
+            context_data = _build_rule_context(rule)
+            analysis_result = run_ai_analysis(rule.user, rule.template, context_data)
+            title, body, target_name = _build_rule_message(rule, analysis_result)
+
+            for channel_obj in rule.channels.filter(is_active=True):
+                channel_impl = ChannelRegistry.get_channel(channel_obj.channel_type)
+                if not channel_impl:
+                    logger.warning(f'未找到渠道实现：{channel_obj.channel_type}')
+                    continue
+
+                success = False
+                channel_error = None
+                try:
+                    success = channel_impl.send(title, body, channel_obj.config)
+                except Exception as error:
+                    channel_error = str(error)
+                    logger.error(f'发送定时 AI 通知异常：rule={rule.id}, channel={channel_obj.id}, 错误：{error}')
+
+                ScheduledAIRuleLog.objects.create(
+                    rule=rule,
+                    channel=channel_obj,
+                    run_date=today,
+                    analysis_target_name=target_name,
+                    status='success' if success else 'failed',
+                    error_message=channel_error,
+                )
+
+                if success:
+                    sent += 1
+
+            rule.last_triggered_at = timezone.now()
+            rule.save(update_fields=['last_triggered_at', 'updated_at'])
+
+        except Exception as error:
+            error_message = str(error)
+            logger.error(f'执行定时 AI 规则失败：rule={rule.id}, 错误：{error}')
+            for channel_obj in rule.channels.filter(is_active=True):
+                ScheduledAIRuleLog.objects.create(
+                    rule=rule,
+                    channel=channel_obj,
+                    run_date=today,
+                    analysis_target_name=rule.fund.fund_name if rule.target_type == 'fund' else rule.account.name,
+                    status='failed',
+                    error_message=error_message,
+                )
+
+    logger.info(f'定时 AI 规则检查完成：触发 {triggered} 条规则，发送 {sent} 条通知')
+    if rules and rules[0].trading_day_only and not is_trading_day(today):
+        return '非交易日，跳过执行'
+    return f'触发 {triggered} 条，发送 {sent} 条'

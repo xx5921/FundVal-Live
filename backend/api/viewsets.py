@@ -20,6 +20,7 @@ from .models import (
     Watchlist, WatchlistItem, EstimateAccuracy, FundNavHistory,
     AIConfig, AIPromptTemplate,
     NotificationChannel, NotificationRule, NotificationLog,
+    ScheduledAIRule, ScheduledAIRuleLog,
 )
 from .serializers import (
     FundSerializer, AccountSerializer, PositionSerializer,
@@ -27,6 +28,7 @@ from .serializers import (
     FundNavHistorySerializer, QueryNavSerializer,
     AIConfigSerializer, AIPromptTemplateSerializer,
     NotificationChannelSerializer, NotificationRuleSerializer, NotificationLogSerializer,
+    ScheduledAIRuleSerializer, ScheduledAIRuleLogSerializer,
 )
 from .sources import SourceRegistry
 from .services import recalculate_all_positions
@@ -1818,6 +1820,38 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = NotificationLog.objects.filter(
+            rule__user=self.request.user
+        ).select_related('rule', 'channel').order_by('-trigger_time')
+
+        rule_id = self.request.query_params.get('rule_id')
+        if rule_id:
+            qs = qs.filter(rule_id=rule_id)
+        return qs
+
+
+class ScheduledAIRuleViewSet(viewsets.ModelViewSet):
+    """定时 AI 规则 ViewSet"""
+
+    serializer_class = ScheduledAIRuleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return ScheduledAIRule.objects.filter(
+            user=self.request.user
+        ).select_related('fund', 'account', 'template').prefetch_related('channels')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class ScheduledAIRuleLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """定时 AI 规则日志 ViewSet"""
+
+    serializer_class = ScheduledAIRuleLogSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = ScheduledAIRuleLog.objects.filter(
             rule__user=self.request.user
         ).select_related('rule', 'channel').order_by('-trigger_time')
 

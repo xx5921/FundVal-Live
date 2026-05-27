@@ -21,6 +21,9 @@ vi.mock('../api', () => ({
   fundsAPI: {
     search: vi.fn(),
   },
+  accountsAPI: {
+    list: vi.fn(),
+  },
   notificationChannelsAPI: {
     list: vi.fn(),
     create: vi.fn(),
@@ -29,6 +32,12 @@ vi.mock('../api', () => ({
     test: vi.fn(),
   },
   notificationRulesAPI: {
+    list: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  scheduledAIRulesAPI: {
     list: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -69,8 +78,10 @@ describe('SettingsPage 桌面端', () => {
     mockScreens = { md: true };
     api.notificationChannelsAPI.list.mockResolvedValue({ data: mockChannels });
     api.notificationRulesAPI.list.mockResolvedValue({ data: mockRules });
+    api.scheduledAIRulesAPI.list.mockResolvedValue({ data: [] });
     api.aiAPI.getConfig.mockResolvedValue({ data: { api_key: '', model: '' } });
     api.aiAPI.listTemplates.mockResolvedValue({ data: [] });
+    api.accountsAPI.list.mockResolvedValue({ data: [] });
     api.sourceAPI.getStatus.mockResolvedValue({ data: { logged_in: false } });
   });
 
@@ -97,8 +108,10 @@ describe('SettingsPage 移动端', () => {
     mockScreens = { md: false };
     api.notificationChannelsAPI.list.mockResolvedValue({ data: mockChannels });
     api.notificationRulesAPI.list.mockResolvedValue({ data: mockRules });
+    api.scheduledAIRulesAPI.list.mockResolvedValue({ data: [] });
     api.aiAPI.getConfig.mockResolvedValue({ data: { api_key: '', model: '' } });
     api.aiAPI.listTemplates.mockResolvedValue({ data: [] });
+    api.accountsAPI.list.mockResolvedValue({ data: [] });
     api.sourceAPI.getStatus.mockResolvedValue({ data: { logged_in: false } });
   });
 
@@ -123,8 +136,10 @@ describe('SettingsPage 通用行为', () => {
     mockScreens = { md: true };
     api.notificationChannelsAPI.list.mockResolvedValue({ data: [] });
     api.notificationRulesAPI.list.mockResolvedValue({ data: [] });
+    api.scheduledAIRulesAPI.list.mockResolvedValue({ data: [] });
     api.aiAPI.getConfig.mockResolvedValue({ data: { api_key: '', model: '' } });
     api.aiAPI.listTemplates.mockResolvedValue({ data: [] });
+    api.accountsAPI.list.mockResolvedValue({ data: [] });
     api.sourceAPI.getStatus.mockResolvedValue({ data: { logged_in: false } });
   });
 

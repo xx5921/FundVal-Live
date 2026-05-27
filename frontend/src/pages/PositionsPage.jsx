@@ -70,17 +70,39 @@ const PositionsPage = () => {
   // AI 分析 Modal 状态
   const [aiModalVisible, setAiModalVisible] = useState(false);
 
+  /**
+   * 将小数收益率转换为 AI 提示词可直接使用的百分数值字符串。
+   *
+   * Args:
+   *   value: 原始收益率，通常为小数形式，如 0.1275。
+   *
+   * Returns:
+   *   转换后的百分数值字符串，如 12.75；无效值时返回空字符串。
+   */
+  const formatAiPercent = (value) => {
+    if (value === null || value === undefined || value === '') {
+      return '';
+    }
+
+    const numericValue = Number(value);
+    if (Number.isNaN(numericValue)) {
+      return '';
+    }
+
+    return (numericValue * 100).toFixed(2);
+  };
+
   const buildAiContextData = () => {
     const account = getSelectedAccount();
     const positionsStr = positions
-      .map(p => `${p.fund?.fund_code}|${p.fund?.fund_name}|${p.holding_share}|${p.holding_cost}|${p.holding_value || ''}|${p.pnl || ''}`)
+      .map(p => `${p.fund?.fund_code}|${p.fund?.fund_name}|${p.holding_share}|${p.holding_cost}|${p.holding_value ?? ''}|${p.pnl ?? ''}`)
       .join('\n');
     return {
       account_name: account?.name || '',
-      holding_cost: account?.holding_cost || '',
-      holding_value: account?.holding_value || '',
-      pnl: account?.pnl || '',
-      pnl_rate: account?.pnl_rate || '',
+      holding_cost: account?.holding_cost ?? '',
+      holding_value: account?.holding_value ?? '',
+      pnl: account?.pnl ?? '',
+      pnl_rate: formatAiPercent(account?.pnl_rate),
       positions: positionsStr,
     };
   };

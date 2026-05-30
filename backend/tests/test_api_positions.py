@@ -245,6 +245,7 @@ class TestPositionOperationListAPI:
         response = client.get('/api/positions/operations/')
         assert response.status_code == 200
         assert len(response.data) == 2
+        assert response.data[0]['fund_code'] == '000001'
 
     def test_filter_operations_by_account(self, client, user, operations):
         """测试按账户过滤操作"""

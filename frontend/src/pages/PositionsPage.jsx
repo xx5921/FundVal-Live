@@ -29,6 +29,7 @@ import { useAccounts } from '../contexts/AccountContext';
 import { usePreference } from '../contexts/PreferenceContext';
 import PositionCharts from '../components/PositionCharts';
 import AIAnalysisModal from '../components/AIAnalysisModal';
+import formatOperationHistory from '../utils/aiContext';
 
 const { useBreakpoint } = Grid;
 
@@ -104,6 +105,7 @@ const PositionsPage = () => {
       pnl: account?.pnl ?? '',
       pnl_rate: formatAiPercent(account?.pnl_rate),
       positions: positionsStr,
+      operation_history: formatOperationHistory(operations),
     };
   };
 

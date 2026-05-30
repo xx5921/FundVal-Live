@@ -25,6 +25,7 @@ const FUND_PLACEHOLDERS = [
   { key: '{{estimate_nav}}', desc: '估值净值' },
   { key: '{{estimate_growth}}', desc: '估值涨跌幅(%)' },
   { key: '{{nav_history}}', desc: '近30条净值历史（日期:净值，逗号分隔）' },
+  { key: '{{operation_history}}', desc: '该基金的持仓操作记录（日期|账户|基金代码|基金名称|操作|金额|份额|净值，换行分隔）' },
   { key: '{{holding_share}}', desc: '持仓份额' },
   { key: '{{holding_cost}}', desc: '持仓成本' },
   { key: '{{holding_value}}', desc: '持仓市值' },
@@ -39,6 +40,7 @@ const POSITION_PLACEHOLDERS = [
   { key: '{{pnl}}', desc: '总盈亏金额' },
   { key: '{{pnl_rate}}', desc: '总盈亏比例(%)' },
   { key: '{{positions}}', desc: '持仓明细（代码|名称|份额|成本|市值|盈亏，换行分隔）' },
+  { key: '{{operation_history}}', desc: '我的持仓操作记录（日期|账户|基金代码|基金名称|操作|金额|份额|净值，换行分隔）' },
 ];
 
 const DataSourceCard = () => {

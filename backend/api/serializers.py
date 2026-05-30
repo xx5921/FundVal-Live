@@ -179,6 +179,12 @@ class PositionOperationSerializer(serializers.ModelSerializer):
 
         return operation
 
+    def to_representation(self, instance):
+        """序列化时补充基金代码。"""
+        data = super().to_representation(instance)
+        data['fund_code'] = instance.fund.fund_code
+        return data
+
 
 class WatchlistItemSerializer(serializers.ModelSerializer):
     """自选列表项序列化器"""

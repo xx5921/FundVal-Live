@@ -858,6 +858,8 @@ class PositionOperationViewSet(viewsets.ModelViewSet):
         else:
             queryset = PositionOperation.objects.filter(account__user=self.request.user)
 
+        queryset = queryset.select_related('account', 'fund')
+
         # 按账户过滤（兼容 account_id 和 account 两种参数名）
         account_id = self.request.query_params.get('account_id') or self.request.query_params.get('account')
         if account_id:
@@ -1736,6 +1738,7 @@ def _create_default_templates(user):
                 '最新净值：{{latest_nav}}\n'
                 '今日估值涨跌：{{estimate_growth}}%\n\n'
                 '近期净值数据：\n{{nav_history}}\n\n'
+                '该基金的持仓操作记录：\n{{operation_history}}\n\n'
                 '请从以下维度分析：\n'
                 '1. 近期净值走势特征\n'
                 '2. 今日估值表现\n'
@@ -1755,6 +1758,7 @@ def _create_default_templates(user):
                 '当前市值：{{holding_value}} 元\n'
                 '总盈亏：{{pnl}} 元（{{pnl_rate}}%）\n\n'
                 '持仓明细：\n{{positions}}\n\n'
+                '我的持仓操作记录：\n{{operation_history}}\n\n'
                 '请从以下维度分析：\n'
                 '1. 整体盈亏状况\n'
                 '2. 持仓集中度风险\n'

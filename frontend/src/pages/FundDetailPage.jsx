@@ -18,6 +18,7 @@ import ReactECharts from 'echarts-for-react';
 import { fundsAPI, positionsAPI } from '../api';
 import AIAnalysisModal from '../components/AIAnalysisModal';
 import { usePreference } from '../contexts/PreferenceContext';
+import formatOperationHistory from '../utils/aiContext';
 
 const FundDetailPage = () => {
   const { code } = useParams();
@@ -50,6 +51,7 @@ const FundDetailPage = () => {
       estimate_nav: estimate?.estimate_nav || '',
       estimate_growth: estimate?.estimate_growth || '',
       nav_history: navHistoryStr,
+      operation_history: formatOperationHistory(operations),
       holding_share: pos?.holding_share || '',
       holding_cost: pos?.holding_cost || '',
       holding_value: pos?.market_value || '',

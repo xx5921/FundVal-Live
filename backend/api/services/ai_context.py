@@ -44,12 +44,54 @@ def _format_date(value):
     return str(value)
 
 
+def _format_operation_history(operations):
+    """将持仓操作记录格式化为提示词文本。
+
+    Args:
+        operations: 持仓操作查询结果。
+
+    Returns:
+        按时间倒序拼接的多行文本。
+    """
+    operation_type_map = {
+        'BUY': '买入',
+        'SELL': '卖出',
+    }
+    return '\n'.join(
+        f'{_format_date(operation.operation_date)}|{operation.account.name}|'
+        f'{operation.fund.fund_code}|{operation.fund.fund_name}|'
+        f'{operation_type_map.get(operation.operation_type, operation.operation_type)}|'
+        f'{_format_decimal(operation.amount)}|{_format_decimal(operation.share)}|'
+        f'{_format_decimal(operation.nav)}'
+        for operation in operations
+    )
+
+
+def _build_operation_history(queryset):
+    """获取最近的持仓操作记录文本。
+
+    Args:
+        queryset: 持仓操作查询集。
+
+    Returns:
+        按时间倒序、最多 30 条的操作记录文本。
+    """
+    recent_operations = queryset.select_related('account', 'fund').order_by(
+        '-operation_date',
+        '-created_at',
+    )[:30]
+    return _format_operation_history(recent_operations)
+
+
 def build_fund_context(user, fund):
     """构造基金 AI 分析上下文。"""
-    from api.models import Position
+    from api.models import Position, PositionOperation
 
     position = Position.objects.filter(account__user=user, fund=fund).select_related('account').first()
     nav_history = fund.nav_history.all()[:30]
+    operation_history = _build_operation_history(
+        PositionOperation.objects.filter(account__user=user, fund=fund)
+    )
 
     return {
         'fund_code': fund.fund_code,
@@ -60,6 +102,7 @@ def build_fund_context(user, fund):
         'estimate_nav': _format_decimal(fund.estimate_nav),
         'estimate_growth': _format_decimal(fund.estimate_growth),
         'nav_history': ','.join(f'{item.nav_date}:{item.unit_nav}' for item in reversed(nav_history)),
+        'operation_history': operation_history,
         'holding_share': _format_decimal(position.holding_share) if position else '',
         'holding_cost': _format_decimal(position.holding_cost) if position else '',
         'holding_value': _format_decimal(_to_decimal(position.holding_share) * _to_decimal(fund.latest_nav)) if position else '',
@@ -70,11 +113,16 @@ def build_fund_context(user, fund):
 
 def build_position_context(user, account):
     """构造子账户 AI 分析上下文。"""
+    from api.models import PositionOperation
+
     positions = account.positions.select_related('fund').all()
     positions_text = '\n'.join(
         f'{pos.fund.fund_code}|{pos.fund.fund_name}|{pos.holding_share}|{pos.holding_cost}|'
         f'{_format_decimal(_to_decimal(pos.holding_share) * _to_decimal(pos.fund.latest_nav)) if pos.fund.latest_nav else ""}|{_format_decimal(pos.pnl)}'
         for pos in positions
+    )
+    operation_history = _build_operation_history(
+        PositionOperation.objects.filter(account=account)
     )
 
     return {
@@ -84,4 +132,5 @@ def build_position_context(user, account):
         'pnl': _format_decimal(account.pnl),
         'pnl_rate': _format_percent(account.pnl_rate),
         'positions': positions_text,
+        'operation_history': operation_history,
     }

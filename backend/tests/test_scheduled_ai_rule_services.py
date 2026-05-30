@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from api.models import AIConfig, AIPromptTemplate, Account, Fund, FundNavHistory, Position
+from api.models import AIConfig, AIPromptTemplate, Account, Fund, FundNavHistory, Position, PositionOperation
 
 User = get_user_model()
 
@@ -45,6 +45,16 @@ class TestAIContextService:
             holding_cost='120.00',
             holding_nav='1.2000',
         )
+        PositionOperation.objects.create(
+            account=child,
+            fund=fund,
+            operation_type='BUY',
+            operation_date='2026-05-27',
+            before_15=True,
+            amount='120.00',
+            share='100.0000',
+            nav='1.2000',
+        )
 
         context = build_fund_context(self.user, fund)
 
@@ -52,6 +62,9 @@ class TestAIContextService:
         assert context['fund_name'] == '测试基金'
         assert 'nav_history' in context
         assert context['holding_share'] == '100.0000'
+        assert 'operation_history' in context
+        assert '子账户' in context['operation_history']
+        assert '买入' in context['operation_history']
 
     def test_build_position_context_includes_expected_keys(self):
         """持仓上下文应包含模板依赖字段"""
@@ -71,12 +84,25 @@ class TestAIContextService:
             holding_cost='120.00',
             holding_nav='1.2000',
         )
+        PositionOperation.objects.create(
+            account=child,
+            fund=fund,
+            operation_type='BUY',
+            operation_date='2026-05-27',
+            before_15=True,
+            amount='120.00',
+            share='100.0000',
+            nav='1.2000',
+        )
 
         context = build_position_context(self.user, child)
 
         assert context['account_name'] == '子账户'
         assert 'positions' in context
         assert '000001|测试基金' in context['positions']
+        assert 'operation_history' in context
+        assert '子账户' in context['operation_history']
+        assert '买入' in context['operation_history']
 
 
 @pytest.mark.django_db

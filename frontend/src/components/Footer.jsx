@@ -3,6 +3,7 @@ import { GithubOutlined } from '@ant-design/icons';
 
 const { Footer: AntFooter } = Layout;
 const { Link, Text } = Typography;
+const REPOSITORY_URL = 'https://github.com/xx5921/FundVal-Live';
 
 const Footer = () => {
   return (
@@ -18,7 +19,7 @@ const Footer = () => {
         <Text type="secondary" style={{ fontSize: 13 }}>
           © 2024-2026 Fundval. Licensed under{' '}
           <Link
-            href="https://github.com/Ye-Yu-Mo/FundVal-Live/blob/main/LICENSE"
+            href={`${REPOSITORY_URL}/blob/main/LICENSE`}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -28,7 +29,7 @@ const Footer = () => {
         </Text>
         <Space size="middle">
           <Link
-            href="https://github.com/Ye-Yu-Mo/FundVal-Live"
+            href={REPOSITORY_URL}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -38,7 +39,7 @@ const Footer = () => {
             </Space>
           </Link>
           <Link
-            href="https://github.com/Ye-Yu-Mo/FundVal-Live/stargazers"
+            href={`${REPOSITORY_URL}/stargazers`}
             target="_blank"
             rel="noopener noreferrer"
           >

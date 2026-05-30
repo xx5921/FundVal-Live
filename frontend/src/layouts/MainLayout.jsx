@@ -15,6 +15,7 @@ import Footer from '../components/Footer';
 
 const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
+const REPOSITORY_URL = 'https://github.com/xx5921/FundVal-Live';
 
 const MainLayout = ({ children }) => {
   const navigate = useNavigate();
@@ -96,7 +97,7 @@ const MainLayout = ({ children }) => {
           <div style={{ fontSize: 16, fontWeight: 'bold' }}>Fundval</div>
           <Space>
             <a
-              href="https://github.com/Ye-Yu-Mo/FundVal-Live"
+              href={REPOSITORY_URL}
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: 'inherit', fontSize: 18 }}
@@ -211,7 +212,7 @@ const MainLayout = ({ children }) => {
         >
           <Space>
             <a
-              href="https://github.com/Ye-Yu-Mo/FundVal-Live"
+              href={REPOSITORY_URL}
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: 'inherit', fontSize: 18 }}

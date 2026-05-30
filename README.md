@@ -6,6 +6,7 @@
 **盘中基金实时估值与逻辑审计系统**
 
 本仓库基于原项目 [Ye-Yu-Mo/FundVal-Live](https://github.com/Ye-Yu-Mo/FundVal-Live) fork 后二次开发。
+感谢原作者及社区的开源贡献。
 当前仓库地址为 [xx5921/FundVal-Live](https://github.com/xx5921/FundVal-Live)，用于持续维护、自托管部署和后续功能迭代。
 
 原项目中的公开演示和外部入口不再作为本仓库的维护内容，请直接以本仓库代码和文档为准。

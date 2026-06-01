@@ -7,30 +7,28 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fundval}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # 如需从宿主机访问数据库，取消注释并在 .env 设置 POSTGRES_PORT
-    # ports:
-    #   - "${POSTGRES_PORT:-5432}:5432"
+    # 🔴 优化 1：拉长健康检查间隔（从 5s 改为 30s），大幅降低对 Windows 网络栈的冲击
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fundval}"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
     networks:
       - fundval
 
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
-    # 不暴露端口到宿主机，仅容器内通信
+    # 🔴 优化 2：同样拉长 Redis 的健康检查间隔
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
-      retries: 5
+      retries: 3
     networks:
       - fundval
 
   backend:
-    image: ${BACKEND_IMAGE:-jasamine/fundval-backend:latest}
+    image: ${BACKEND_IMAGE:-xiaoxu/fundval-live-backend:latest}
     command: gunicorn fundval.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-4} --access-logfile - --error-logfile -
     volumes:
       # 生产环境：只挂载配置目录，不挂载本地代码
@@ -54,17 +52,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # 🔴 优化 3：把 HTTP 检查拉长到 30s，降低网络句柄消耗
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/health/\")' || exit 1"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
       start_period: 30s
     networks:
       - fundval
 
   celery-worker:
-    image: ${BACKEND_IMAGE:-jasamine/fundval-backend:latest}
+    image: ${BACKEND_IMAGE:-xiaoxu/fundval-live-backend:latest}
     entrypoint: []
     command: celery -A fundval worker -l ${CELERY_LOGLEVEL:-info}
     volumes:
@@ -91,7 +90,7 @@ services:
       - fundval
 
   celery-beat:
-    image: ${BACKEND_IMAGE:-jasamine/fundval-backend:latest}
+    image: ${BACKEND_IMAGE:-xiaoxu/fundval-live-backend:latest}
     entrypoint: []
     command: celery -A fundval beat -l ${CELERY_LOGLEVEL:-info}
     volumes:
